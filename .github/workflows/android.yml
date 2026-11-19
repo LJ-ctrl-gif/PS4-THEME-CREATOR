@@ -20,6 +20,8 @@ jobs:
           channel: stable
       - name: Create Android platform files
         run: flutter create --project-name ps4_theme_creator --platforms=android .
+      - name: Remove generated sample test
+        run: rm -f test/widget_test.dart
       - name: Add Android network permissions
         run: |
           python3 - <<'PY'
