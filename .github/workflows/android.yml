@@ -20,6 +20,18 @@ jobs:
           channel: stable
       - name: Create Android platform files
         run: flutter create --project-name ps4_theme_creator --platforms=android .
+      - name: Add Android network permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          marker = '    <application'
+          permissions = '    <uses-permission android:name="android.permission.INTERNET" />\\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\\n'
+          if "android.permission.INTERNET" not in s:
+              s = s.replace(marker, permissions + marker, 1)
+          p.write_text(s)
+          PY
       - name: Install dependencies
         run: flutter pub get
       - name: Analyze
