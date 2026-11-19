@@ -27,7 +27,7 @@ jobs:
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text()
           marker = '    <application'
-          permissions = '    <uses-permission android:name="android.permission.INTERNET" />\\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\\n'
+          permissions = '    <uses-permission android:name="android.permission.INTERNET" />' + chr(10) + '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' + chr(10)
           if "android.permission.INTERNET" not in s:
               s = s.replace(marker, permissions + marker, 1)
           p.write_text(s)
