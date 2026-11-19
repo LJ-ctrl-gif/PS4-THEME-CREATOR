@@ -21,3 +21,13 @@ Use only images and audio you own or are authorized to use. This project does no
 
 ## Build
 The Android build is configured through GitHub Actions. Open **Actions → Android Build** to download the generated APK when a workflow run completes.
+
+## Using the transfer screen
+
+1. Start the FTP server from GoldHEN on the PS4.
+2. Connect the Android phone and PS4 to the same local Wi-Fi network.
+3. Enter the PS4 LAN IP address and the FTP port shown by the console.
+4. Select a wallpaper and/or audio file on the Create tab.
+5. Open Transfer and send the files. The app attempts to create `/data/PS4ThemeCreator/` and uploads the selected files plus `theme-project.json`.
+
+FTP credentials and writable paths vary by server configuration. The app currently uses passive FTP and does not provide encryption; use it only on a trusted local network. If the PS4 FTP server does not permit writes to `/data`, the transfer will report the server error rather than silently claiming success.
