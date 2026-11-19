@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'ps4_ftp_client.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -84,6 +86,14 @@ class _CreatorHomeState extends State<CreatorHome> {
   final authorController = TextEditingController();
   bool loading = true;
   String status = 'Create a theme project to get started.';
+  final ipController = TextEditingController();
+  final portController = TextEditingController(text: '2121');
+  final userController = TextEditingController(text: 'anonymous');
+  final passwordController = TextEditingController();
+  bool transferring = false;
+  bool obscurePassword = true;
+  double transferProgress = 0;
+  String transferStatus = 'Enter your PS4 FTP address to connect.';
 
   @override
   void initState() {
@@ -95,12 +105,19 @@ class _CreatorHomeState extends State<CreatorHome> {
   void dispose() {
     nameController.dispose();
     authorController.dispose();
+    ipController.dispose();
+    portController.dispose();
+    userController.dispose();
+    passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _loadDraft() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('theme_draft');
+    ipController.text = prefs.getString('ps4_ip') ?? '';
+    portController.text = prefs.getString('ps4_port') ?? '2121';
+    userController.text = prefs.getString('ps4_user') ?? 'anonymous';
     if (raw != null) {
       try {
         final restored = ThemeDraft.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -153,6 +170,72 @@ class _CreatorHomeState extends State<CreatorHome> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Project manifest copied to clipboard')),
       );
+    }
+  }
+
+
+  Future<void> _transferToPs4() async {
+    final host = ipController.text.trim();
+    final port = int.tryParse(portController.text.trim());
+    if (host.isEmpty || port == null || port < 1 || port > 65535) {
+      _showMessage('Enter a valid PS4 IP address and FTP port.');
+      return;
+    }
+    final files = <File>[];
+    if (draft.wallpaperPath != null) files.add(File(draft.wallpaperPath!));
+    if (draft.audioPath != null) files.add(File(draft.audioPath!));
+    if (files.isEmpty) {
+      _showMessage('Choose a wallpaper or audio file before transferring.');
+      return;
+    }
+    setState(() {
+      transferring = true;
+      transferProgress = 0;
+      transferStatus = 'Connecting to PS4…';
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ps4_ip', host);
+    await prefs.setString('ps4_port', port.toString());
+    await prefs.setString('ps4_user', userController.text.trim());
+    final client = Ps4FtpClient(
+      host, port,
+      userController.text.trim().isEmpty ? 'anonymous' : userController.text.trim(),
+      passwordController.text,
+    );
+    try {
+      await client.connect();
+      if (mounted) setState(() => transferStatus = 'Connected. Preparing destination folder…');
+      await client.prepareFolder('/data/PS4ThemeCreator');
+      for (var i = 0; i < files.length; i++) {
+        final file = files[i];
+        if (!await file.exists()) {
+          throw FileSystemException('Selected asset is no longer available', file.path);
+        }
+        final rawName = file.uri.pathSegments.isEmpty ? 'asset_$i' : file.uri.pathSegments.last;
+        final safeName = rawName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+        if (mounted) {
+          setState(() => transferStatus = 'Uploading ' + safeName + ' (' +
+              (i + 1).toString() + '/' + files.length.toString() + ')…');
+        }
+        await client.uploadFile(file, safeName);
+        if (mounted) setState(() => transferProgress = (i + 1) / (files.length + 1));
+      }
+      final manifest = File(Directory.systemTemp.path + '/ps4_theme_project.json');
+      await manifest.writeAsString(const JsonEncoder.withIndent('  ').convert(draft.toJson()));
+      await client.uploadFile(manifest, 'theme-project.json');
+      await manifest.delete();
+      if (mounted) {
+        setState(() {
+          transferProgress = 1;
+          transferStatus = 'Transfer complete: /data/PS4ThemeCreator/';
+        });
+        _showMessage('Theme assets sent to PS4.');
+      }
+    } catch (error) {
+      if (mounted) setState(() => transferStatus = 'Transfer failed: $error');
+    } finally {
+      await client.close();
+      if (mounted) setState(() => transferring = false);
     }
   }
 
@@ -267,29 +350,36 @@ class _CreatorHomeState extends State<CreatorHome> {
 
   Widget _transferPage() => ListView(
         padding: const EdgeInsets.all(18),
-        children: const [
-          Icon(Icons.sync_alt, size: 56, color: Color(0xFF38A9FF)),
-          SizedBox(height: 16),
-          Text('Android → PS4 transfer', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text(
-            'The transfer receiver is the next milestone. It will use your local Wi-Fi network and a dedicated destination folder on the PS4. No transfer is active yet.',
+        children: [
+          const Icon(Icons.sync_alt, size: 56, color: Color(0xFF38A9FF)),
+          const SizedBox(height: 12),
+          const Text('Android → PS4 transfer', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('Enable the FTP server in GoldHEN on your PS4. Keep your phone and console on the same Wi-Fi network.'),
+          const SizedBox(height: 18),
+          TextField(controller: ipController, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'PS4 IP address', hintText: '192.168.1.100', border: OutlineInputBorder(), prefixIcon: Icon(Icons.computer))),
+          const SizedBox(height: 10),
+          TextField(controller: portController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'FTP port', border: OutlineInputBorder(), prefixIcon: Icon(Icons.settings_ethernet))),
+          const SizedBox(height: 10),
+          TextField(controller: userController, decoration: const InputDecoration(labelText: 'FTP username', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          TextField(controller: passwordController, obscureText: obscurePassword, decoration: InputDecoration(labelText: 'FTP password (if required)', border: const OutlineInputBorder(), suffixIcon: IconButton(onPressed: () => setState(() => obscurePassword = !obscurePassword), icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off)))),
+          const SizedBox(height: 14),
+          const Card(child: ListTile(leading: Icon(Icons.folder_outlined, color: Color(0xFF38A9FF)), title: Text('Destination folder'), subtitle: Text('/data/PS4ThemeCreator/'))),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: transferring ? null : _transferToPs4,
+            icon: transferring ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send),
+            label: Text(transferring ? 'Transferring…' : 'Send selected theme files'),
           ),
-          SizedBox(height: 18),
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.folder_outlined),
-              title: Text('Planned PS4 folder'),
-              subtitle: Text('/data/PS4ThemeCreator/'),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.wifi),
-              title: Text('Connection status'),
-              subtitle: Text('Not connected'),
-            ),
-          ),
+          if (transferring || transferProgress > 0) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: transferProgress),
+          ],
+          const SizedBox(height: 12),
+          Text(transferStatus, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          const Text('This sends selected source assets and project JSON. It does not install a theme or create a PS4 PKG.', style: TextStyle(color: Colors.white54, fontSize: 12)),
         ],
       );
 
