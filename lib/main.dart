@@ -174,6 +174,13 @@ class _CreatorHomeState extends State<CreatorHome> {
   }
 
 
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _transferToPs4() async {
     final host = ipController.text.trim();
     final port = int.tryParse(portController.text.trim());
