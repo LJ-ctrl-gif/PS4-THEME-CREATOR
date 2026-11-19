@@ -42,7 +42,7 @@ class Ps4FtpClient {
   Future<void> connect() async {
     _control = await Socket.connect(host, port, timeout: const Duration(seconds: 8));
     _lines = StreamIterator<String>(
-      _control!.transform(utf8.decoder).transform(const LineSplitter()),
+      utf8.decoder.bind(_control!).transform(const LineSplitter()),
     );
     final greeting = await _readReply();
     if (!greeting.startsWith('220')) {
